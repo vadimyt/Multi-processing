@@ -55,6 +55,23 @@ def parallel_sum_array_piramid(arr:np.ndarray, workers = os.cpu_count()):
         n = int((n+1)/2)
     return local_arr[0]
 
+
+def parallel_sum_array_batch(arr:np.ndarray, workers = os.cpu_count()):
+    shape = arr.shape[0]
+    batch_count=int(shape/workers)
+    batch = [arr[0:(1)*batch_count]]
+    for i in range(0,workers):
+        if i+1 == workers:
+            batch.append(arr[(i+1)*batch_count:])
+        else:
+            batch.append(arr[(i+1)*batch_count:(i+2)*batch_count])
+    with closing(multiprocessing.Pool(
+            len(batch))) as p:
+            sums = p.map(sum_array, batch)
+    p.join()
+    sum = sum_array(sums)
+    return(sum)
+
 def task(array_size = 10, workers = os.cpu_count()):
     import time
     multiprocessing.freeze_support()
@@ -83,18 +100,25 @@ def task(array_size = 10, workers = os.cpu_count()):
     print("Simple sum:")
     print("--- %s seconds ---" % (end_time - start_time))
 
+    # start_time = time.time()
+    # print(parallel_sum_array_piramid(arr, workers))
+    # end_time = time.time()
+    # timeA = end_time - start_time
+    # print("Parallel sum:")
+    # print("--- %s seconds ---" % (end_time - start_time))
+
     start_time = time.time()
-    print(parallel_sum_array_piramid(arr, workers))
+    print(parallel_sum_array_batch(arr, workers))
     end_time = time.time()
     timeA = end_time - start_time
-    print("Parallel sum:")
+    print("Batch sum:")
     print("--- %s seconds ---" % (end_time - start_time))
 
     print('\n')
 
     return timeA
 
-def create_test_args(start_array_size = 100000, stop_array_size = 1000000, step = None, max_workers = os.cpu_count()):
+def create_test_args(start_array_size = 100000, stop_array_size = 4000000, step = None, max_workers = os.cpu_count()):
     args = []
     if (step == None):
         step = start_array_size
@@ -103,17 +127,17 @@ def create_test_args(start_array_size = 100000, stop_array_size = 1000000, step 
             args.append((array_size, workers))
     return args
 
-def graph():
+def graph(start, stop, max_workers = os.cpu_count()):
     import math
     from matplotlib import pyplot as plt
-    args = create_test_args(100, 300, max_workers=2)
+    args = create_test_args(start, stop, max_workers=max_workers)
     x = []
     y = []
     z = {}
     for array_size,workers in args:
         x.append(array_size)
         y.append(workers)
-        z[(array_size,workers)]=task(array_size,workers)*100
+        z[(array_size,workers)]=task(array_size,workers)*1000
     
     xgrid, ygrid = np.meshgrid(x, y)
     zgrid = []
@@ -129,7 +153,7 @@ def graph():
     fig, ax = plt.subplots()
     vmin = math.floor(z[min(z)])
     vmax = math.ceil(z[max(z)])
-    num = 100
+    num = 20
     contourf_ = ax.contourf(xgrid, ygrid, zgrid, levels=np.linspace(vmin,vmax,num),extend='max')
     cbar = fig.colorbar(contourf_,ticks=range(vmin, vmax+1, 10))
     t = fig.get_axes()[0].axes
@@ -139,4 +163,5 @@ def graph():
     input()
 
 if __name__ == "__main__":
-    task()
+    graph(10000000,40000000)
+    #task(40000000)
