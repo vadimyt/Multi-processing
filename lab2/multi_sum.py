@@ -58,27 +58,35 @@ def parallel_sum_array_piramid(arr:np.ndarray, workers = os.cpu_count()):
 
 def parallel_sum_array_batch(arr:np.ndarray, workers = os.cpu_count()):
     shape = arr.shape[0]
-    batch_count=int(shape/workers)
-    batch = [arr[0:(1)*batch_count]]
+    if shape == 1:
+        return arr[0]
+    if shape <= workers:
+        return sum_array(arr)
+    batch_len=int(shape/workers)
+    batch = [arr[0:(1)*batch_len]]
     for i in range(0,workers):
         if i+1 == workers:
-            batch.append(arr[(i+1)*batch_count:])
+            if shape%workers!=0:
+                batch.append(arr[(i+1)*batch_len:])
         else:
-            batch.append(arr[(i+1)*batch_count:(i+2)*batch_count])
+            batch.append(arr[(i+1)*batch_len:(i+2)*batch_len])
     with closing(multiprocessing.Pool(
             len(batch))) as p:
             sums = p.map(sum_array, batch)
     p.join()
-    sum = sum_array(sums)
+    sum = sum_array(np.array(sums, arr.dtype))
     return(sum)
 
-def task(array_size = 10, workers = os.cpu_count()):
+def task(array_size = 10, workers = os.cpu_count(), repeat = 1):
     import time
     multiprocessing.freeze_support()
+    timeA = 0
+    timeB = 0
+    timeC = 0
+    repeat = repeat
 
     start_time = time.time()
-    arr = np.random.randint(100,size=array_size)
-    arr.astype(np.int64)
+    arr = np.random.randint(100,size=array_size, dtype=np.int64)
     end_time = time.time()
     print("Time took to generate array of size %i:" % (array_size))
     print("--- %s seconds ---" % (end_time - start_time))
@@ -88,80 +96,86 @@ def task(array_size = 10, workers = os.cpu_count()):
 
     print('\n')
 
-    start_time = time.time()
-    print(arr.sum())
-    end_time = time.time()
-    print("Numpy built-in sum:")
-    print("--- %s seconds ---" % (end_time - start_time))
+    for i in range(repeat):
+        start_time = time.time()
+        print(sum_array(arr))
+        end_time = time.time()
+        print("Simple sum: " + str(i+1) +"/"+str(repeat))
+        timeA += end_time - start_time
 
-    start_time = time.time()
-    print(sum_array(arr))
-    end_time = time.time()
+    # for i in range(repeat):
+    #     start_time = time.time()
+    #     print(parallel_sum_array_piramid(arr, workers))        
+    #     end_time = time.time()
+    #     print("Piramidal sum: " + str(i+1) +"/"+str(repeat))
+    #     timeB += end_time - start_time
+
+    for i in range(repeat):
+        start_time = time.time()
+        print(parallel_sum_array_batch(arr, workers))
+        end_time = time.time()
+        print("Batch sum: " + str(i+1) +"/"+str(repeat))
+        timeC += end_time - start_time
+
     print("Simple sum:")
-    print("--- %s seconds ---" % (end_time - start_time))
-
-    # start_time = time.time()
-    # print(parallel_sum_array_piramid(arr, workers))
-    # end_time = time.time()
-    # timeA = end_time - start_time
-    # print("Parallel sum:")
-    # print("--- %s seconds ---" % (end_time - start_time))
-
-    start_time = time.time()
-    print(parallel_sum_array_batch(arr, workers))
-    end_time = time.time()
-    timeA = end_time - start_time
+    print("--- %s seconds ---" % (timeA/repeat))
+    # print("Piramidal sum:")
+    # print("--- %s seconds ---" % (timeB/repeat))
     print("Batch sum:")
-    print("--- %s seconds ---" % (end_time - start_time))
+    print("--- %s seconds ---" % (timeC/repeat))
 
-    print('\n')
-
-    return timeA
+    return (timeA/repeat)*1000, (timeB/repeat)*1000, (timeC/repeat)*1000
 
 def create_test_args(start_array_size = 100000, stop_array_size = 4000000, step = None, max_workers = os.cpu_count()):
     args = []
     if (step == None):
         step = start_array_size
     for array_size in range(start_array_size,stop_array_size+step,step):
+        args.append([])
         for workers in range(1,max_workers+1):
-            args.append((array_size, workers))
+            args[len(args)-1].append((array_size, workers))
     return args
 
 def graph(start, stop, max_workers = os.cpu_count()):
     import math
     from matplotlib import pyplot as plt
+    from matplotlib.ticker import MaxNLocator
     args = create_test_args(start, stop, max_workers=max_workers)
     x = []
-    y = []
-    z = {}
-    for array_size,workers in args:
-        x.append(array_size)
-        y.append(workers)
-        z[(array_size,workers)]=task(array_size,workers)*1000
-    
-    xgrid, ygrid = np.meshgrid(x, y)
-    zgrid = []
-    for j in range(len(xgrid)):
-            zgrid.append([])
-    for k in range(len(zgrid)):
-        for l in range(len(xgrid[k])):
-            try:
-                zgrid[k].append(z[(xgrid[k][l],ygrid[k][l])])
-            except:
-                zgrid[k].append(np.NaN)
-
-    fig, ax = plt.subplots()
-    vmin = math.floor(z[min(z)])
-    vmax = math.ceil(z[max(z)])
-    num = 20
-    contourf_ = ax.contourf(xgrid, ygrid, zgrid, levels=np.linspace(vmin,vmax,num),extend='max')
-    cbar = fig.colorbar(contourf_,ticks=range(vmin, vmax+1, 10))
-    t = fig.get_axes()[0].axes
-    t.set_xlabel("Array size")
-    t.set_ylabel("Workers")
-    fig.show()
+    y1 = []
+    y2 = []
+    y3 = []
+    for val in args:
+        for array_size,workers in val:
+            x.append(workers)
+            c_time, p_time, b_time = task(array_size,workers, 10)
+            y1.append(c_time)    
+            #y2.append(p_time) 
+            y3.append(b_time) 
+        fig, ax = plt.subplots()
+        ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+        if (len(y1)>1):
+            ax.plot(x, y1, linewidth=2.0, color="red", label="consistent")
+        if (len(y2)>1):
+            ax.plot(x, y2, linewidth=2.0, color="green", label="piramidal")
+        if (len(y3)>1):
+            ax.plot(x, y3, linewidth=2.0, color="blue", label="batch")
+        ax.set_title("Array size: " + str(val[0][0]))
+        ax.set_xlabel("Workers")
+        ax.set_ylabel("Time (ms)")
+        fig.legend()
+        fig.show()
+        x.clear()
+        y1.clear()
+        y2.clear()
+        y3.clear()
     input()
 
 if __name__ == "__main__":
-    graph(10000000,40000000)
-    #task(40000000)
+    graph(10000000,10000000)
+    graph(1000000,1000000)
+    graph(100000,100000)
+    graph(10000,10000)
+    #task(100000000)
+    #print(np.array([1,2,1,2,1,2,1,2,1,2,1,2,1,21,1,21,2]).sum())
+    #print(parallel_sum_array_batch(np.random.randint(100,size=100000000, dtype=np.int64),16))
